@@ -1,0 +1,833 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>이벤트 페이지 자동 소스 삽입 (PC/모바일)</title>
+<style>
+    /* 기본 리셋 및 폰트 설정 */
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Malgun Gothic', '맑은 고딕', sans-serif; background-color: #f8f9fa; color: #333; padding: 20px; }
+
+    /* 드래그/리사이즈 중 커서 깜빡임 방지용 글로벌 클래스 */
+    body.is-dragging, body.is-dragging * { cursor: grabbing !important; }
+    body.is-resizing-both, body.is-resizing-both * { cursor: se-resize !important; }
+    body.is-resizing-y, body.is-resizing-y * { cursor: s-resize !important; }
+
+    /* 레이아웃 컨테이너 */
+    .container { max-width: 1800px; margin: 0 auto; background: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+
+    /* 헤더 영역 */
+    .header h1 { font-size: 24px; margin-bottom: 15px; }
+    .header p { color: #666; font-size: 14px; margin-bottom: 5px; }
+
+    /* 버튼 공통 스타일 */
+    .btn { padding: 8px 16px; border: 1px solid #ccc; background: #fff; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold; }
+    .btn:hover { background: #f0f0f0; }
+    .btn-primary { color: #0056b3; border-color: #0056b3; background-color: #e6f2ff; }
+    .btn-primary:hover { background-color: #cce5ff; }
+    .btn-warning { color: #856404; border-color: #ffeeba; background-color: #fff3cd; }
+    .btn-warning:hover { background-color: #ffeeba; }
+    .btn-danger { background: #e74c3c; color: #fff; border-color: #e74c3c; }
+    .btn-danger:hover { background: #c0392b; }
+
+    /* 통합 설정 패널 */
+    .control-panel { 
+        background: #f8f9fa; 
+        border: 1px solid #dcdcdc; 
+        border-radius: 8px; 
+        margin: 20px 0; 
+        overflow: hidden; 
+        display: flex; 
+        flex-direction: column; 
+    }
+    .control-row { 
+        padding: 15px 20px; 
+        border-bottom: 1px solid #eaeaea; 
+    }
+    .control-row:last-child { 
+        border-bottom: none; 
+        background: #fff; 
+        display: flex; 
+        justify-content: flex-end; /* 전체 초기화 버튼 우측 정렬 */
+    }
+    .control-desc { 
+        font-size: 13px; 
+        font-weight: bold; 
+        color: #2980b9; 
+        margin-bottom: 10px; 
+    }
+    .control-desc::before { content: "💡 "; }
+    .control-items { 
+        display: flex; 
+        align-items: center; 
+        gap: 12px; 
+        flex-wrap: wrap; 
+    }
+    .control-items .label { font-size: 14px; font-weight: bold; color: #333; }
+    .control-items input[type="number"], 
+    .control-items input[type="text"] { 
+        padding: 8px 12px; 
+        border: 1px solid #ccc; 
+        border-radius: 4px; 
+        font-size: 14px; 
+        background-color: #fff; 
+    }
+    .control-items input[type="number"] { width: 100px; }
+    .control-items input[type="color"] { 
+        width: 34px; 
+        height: 34px; 
+        padding: 0; 
+        border: 1px solid #ccc; 
+        border-radius: 4px; 
+        cursor: pointer; 
+    }
+    .banner-row { display: flex; align-items: center; gap: 10px; width: 100%; margin-bottom: 10px; }
+    .banner-row:last-child { margin-bottom: 0; }
+
+    /* 메인 워크스페이스 */
+    .workspace { display: flex; flex-direction: column; gap: 20px; }
+
+    /* 캔버스 래퍼 */
+    .canvas-wrapper { display: flex; gap: 20px; width: 100%; }
+    .canvas-section { flex: 1; display: flex; flex-direction: column; }
+    .canvas-header { font-size: 15px; font-weight: bold; color: #333; margin-bottom: 10px; text-align: center; padding: 10px; background: #f1f3f5; border-radius: 4px; }
+    
+    /* 캔버스 박스 */
+    .canvas-box { position: relative; width: 100%; min-height: 500px; border: 2px dashed #3498db; background-color: #f4f9fd; overflow: hidden; }
+    .canvas-box img.bg-img { width: 100%; height: auto; display: block; pointer-events: none; }
+
+    /* 요소 투명도 및 내부 클릭 방지 처리 */
+    .event_finished {
+        display: none; 
+        position: absolute; 
+        z-index: 999; 
+        border-radius: 10px; 
+        overflow: hidden; 
+        box-sizing: border-box;
+        background: rgba(0,0,0,0.65);
+        cursor: grab; 
+        border: 2px dashed #e67e22;
+        opacity: 0.6; /* 배경 투명도 부여 */
+        transition: opacity 0.2s;
+    }
+    .event_finished.on { display: block !important; }
+    .event_finished:hover, .event_finished.is-active { opacity: 0.95; } 
+    .event_finished:active { cursor: grabbing; } 
+    .event_finished::after { width:100%;height: 100%;display: block;content: "";clear: both;background:#000;opacity: 0.65;position: absolute;top:0;left:0;z-index: 1; pointer-events: none; }
+    .event_finished img { width: auto; max-width: 80%; height: auto; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 2; pointer-events: none; display: block; }
+    .event_finished span { display: none; }
+
+    /* 일반 박스 공통 */
+    .drag-box { 
+        position: absolute; display: flex; box-sizing: border-box; cursor: grab; align-items: center; justify-content: flex-end; font-weight: bold; z-index: 10; padding-right: 5px; 
+        opacity: 0.6; 
+        transition: opacity 0.2s;
+    }
+    .drag-box:hover, .drag-box.is-active { opacity: 0.95; } 
+    .drag-box:active { cursor: grabbing; }
+
+    .box-num1, .box-num2 { background: rgba(255, 255, 255, 0.7); border: 2px dashed #e74c3c; font-size: 24px; letter-spacing: -0.03em; } 
+    .box-cal { background: rgba(52, 152, 219, 0.4); border: 2px solid #3498db; font-size: 12px; color: #fff; text-shadow: 1px 1px 2px rgba(0,0,0,0.8); justify-content: center; overflow: hidden; }  
+    .box-banner { background: rgba(241, 196, 15, 0.5); border: 2px solid #f1c40f; font-size: 12px; color: #333; justify-content: center; } 
+
+    /* 박스 안의 내용은 마우스 이벤트를 무시 */
+    .drag-box > *:not(.resize-handle), 
+    .event_finished > *:not(.resize-handle) {
+        pointer-events: none !important;
+    }
+
+    /* 캔버스 내 달력 CSS와 동일하게 구현 */
+    .box-cal table { width: 100%; border-collapse: collapse; table-layout: fixed; pointer-events: none; }
+    .box-cal caption, .box-cal thead { display: none; }
+    .box-cal td { width: 11.2%; height: 0; padding-top: 12.6%; position: relative; }
+    .box-cal td .num { display: block; width: 1px; height: 1px; overflow: hidden; position: absolute; top: -1000em; left: 0; }
+    .box-cal td a.atten_stemp { position: absolute; top: 25.6%; left: 33%; width: 56.8%; display: block; }
+    .box-cal td img { width: 100%; height: auto; position: absolute; top: 25.6%; left: 33%; width: 56.8%; vertical-align: top; }
+
+    /* 크기 조절 네모 핸들 */
+    .resize-handle { 
+        position: absolute; 
+        width: 24px; 
+        height: 24px; 
+        background: #3498db; 
+        border: 2px solid #fff; 
+        bottom: -10px; 
+        right: -10px; 
+        cursor: se-resize; 
+        z-index: 20; 
+        box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+        pointer-events: auto !important;
+    }
+    
+    /* overflow: hidden 된 요소들(달력, 종료레이어)의 핸들 */
+    .box-cal .resize-handle,
+    .event_finished .resize-handle {
+        width: 28px;
+        height: 28px;
+        background: #e74c3c; 
+        bottom: 0; 
+        right: 0;
+        border-top-left-radius: 6px;
+        border-bottom-right-radius: 0;
+        box-shadow: none;
+        cursor: s-resize; /* 상하 조절 전용 화살표 */
+    }
+
+    /* 결과 패널 래퍼 */
+    .panels-wrapper { display: flex; gap: 20px; width: 100%; }
+    .panel { flex: 1; border: 1px solid #e0e0e0; border-radius: 6px; overflow: hidden; display: flex; flex-direction: column; }
+    .panel-header { background: #f8f9fa; padding: 12px 15px; font-weight: bold; font-size: 15px; border-bottom: 1px solid #e0e0e0; }
+    .panel-body { padding: 15px; background: #fff; font-size: 14px; color: #555; flex: 1; display: flex; flex-direction: column; }
+    
+    textarea { width: 100%; flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 4px; resize: vertical; font-family: monospace; font-size: 12px; white-space: pre; min-height: 450px; }
+    .btn-full { width: 100%; margin-top: 10px; background-color: #34495e; color: #fff; border: none; padding: 10px; border-radius: 4px; cursor: pointer; font-weight: bold; }
+    .btn-full:hover { background-color: #2c3e50; }
+</style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header">
+        <h1>초등 출석체크 이벤트 페이지 자동 소스 삽입 (PC/모바일)</h1>
+        <!-- 전체 초기화 버튼 -->
+        <div class="control-row">
+            <button class="btn btn-danger" onclick="location.reload()">🔄 전체 초기화</button>
+        </div>
+    </div>
+    
+
+    <!-- 통합 설정 패널 -->
+    <div class="control-panel">
+        
+        <!-- 1번 영역: 이미지 및 레이어 제어 -->
+        <div class="control-row">
+            <div class="control-desc">1. PC/MOBILE 이미지 업로드 , 종료레이어 상태 확인</div>
+            <div class="control-items">
+                <button class="btn btn-primary" onclick="document.getElementById('fileInputPc').click()">💻 PC 이미지 선택</button>
+                <input type="file" id="fileInputPc" style="display:none" accept="image/*">
+                
+                <button class="btn btn-primary" onclick="document.getElementById('fileInputMob').click()">📱 모바일 이미지 선택</button>
+                <input type="file" id="fileInputMob" style="display:none" accept="image/*">
+
+                <button class="btn btn-warning" onclick="toggleFinishedLayer()" id="toggleFinishedBtn">🔒 종료 레이어 켜기</button>
+            </div>
+        </div>
+
+        <!-- 2번 영역: 날짜 설정 -->
+        <div class="control-row">
+            <div class="control-desc">2. 출석 월 설정 : 이벤트가 진행되는 연도와 월을 지정하면, 달력 HTML 구조가 해당 월에 맞춰 자동 생성되며 , HTML내 월의 텍스트도 전부 바뀝니다.</div>
+            <div class="control-items">
+                <span class="label">출석월 입력 :</span>
+                <input type="number" id="eventYear" placeholder="년도 (예: 2026)" value="2026">
+                <input type="number" id="eventMonth" placeholder="월 (예: 6)" value="6">
+            </div>
+        </div>
+
+        <!-- 3번 영역: 색상 설정 -->
+        <div class="control-row">
+            <div class="control-desc">3. 총 수강시간 컬러 : 총 수강시간 컬러 지정</div>
+            <div class="control-items">
+                <span class="label">출석숫자 색상:</span>
+                <input type="color" id="attendNumColor" value="#ff2726">
+                <input type="text" id="attendNumColorText" value="#FF2726" maxlength="7">
+            </div>
+        </div>
+
+        <!-- 4번 영역: 하단 배너 설정 -->
+        <div class="control-row">
+            <div class="control-desc">4. 하단 배너 설정 : 배너 URL과 배너 텍스트 넣어주세요</div>
+            <div class="control-items" style="flex-direction: column; align-items: flex-start; width: 100%;">
+                <div class="banner-row">
+                    <span class="label" style="width: 50px;">배너1</span>
+                    <input type="text" id="banner1Url" placeholder="URL을 넣어주세요" style="width: 250px;">
+                    <input type="text" id="banner1Text" placeholder="배너text 입력해주세요" style="flex: 1;">
+                </div>
+                <div class="banner-row">
+                    <span class="label" style="width: 50px;">배너2</span>
+                    <input type="text" id="banner2Url" placeholder="URL을 넣어주세요" style="width: 250px;">
+                    <input type="text" id="banner2Text" placeholder="배너text 입력해주세요" style="flex: 1;">
+                </div>
+            </div>
+        </div>
+
+         <div class="control-row" style="background-color: #f8f9fa">
+            <div class="control-desc" style="flex-direction: column; align-items: flex-start; width: 100%;"">5. 위치설정 : 아래 미리보기에서 위치를 드래그하여 조정하세요</div>
+        </div>
+    </div>
+    <!-- // 통합 설정 패널 -->
+
+    <div class="workspace">
+        <!-- 듀얼 캔버스 영역 (상단) -->
+        <div class="canvas-wrapper">
+            <!-- PC 버전 캔버스 -->
+            <div class="canvas-section">
+                <div class="canvas-header">PC 버전</div>
+                <div class="canvas-box" id="dropZonePc">
+                    
+                    <!-- 이벤트 종료 레이어 미리보기 -->
+                    <div class="event_finished" id="pcFinishedLayer" data-type="pc" style="left: 6.7%; top: 26.2%; width: 86.7%; height: 35.4%;">
+                        <img src="https://cbox.ebs.co.kr/portal/event/2025/08/11/01/images/event-finished.png" alt="이벤트가 종료되었습니다.">
+                        <span>6월 출석체크 이벤트는 종료되었습니다.</span>
+                        <div class="resize-handle"></div>
+                    </div>
+
+                    <!-- 숫자 박스들: resize-handle 제거됨 -->
+                    <div class="drag-box box-num1" id="pcNum1" data-type="pc" style="top: 27.32%; right: 30%; width: 6%; height: 1.4%;">
+                        0
+                    </div>
+                    <div class="drag-box box-num2" id="pcNum2" data-type="pc" style="top: 27.32%; right: 40.5%; width: 7%; height: 1.4%;">
+                        0
+                    </div>
+                    
+                    <div class="drag-box box-cal" id="pcCal" data-type="pc" style="top: 34%; left: 11.3%; width: 77.2%; height: 35%;">
+                        <div id="pcCanvasCalContent" style="width:100%; height:100%;"></div>
+                        <div class="resize-handle"></div>
+                    </div>
+                    <div class="drag-box box-banner" id="pcBanner1" data-type="pc" style="top: 94%; left: 6.4%; width: 42.7%; height: 4.4%;">
+                        banner1<div class="resize-handle"></div>
+                    </div>
+                    <div class="drag-box box-banner" id="pcBanner2" data-type="pc" style="top: 94%; left: 50.9%; width: 42.7%; height: 4.4%;">
+                        banner2<div class="resize-handle"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 모바일 버전 캔버스 -->
+            <div class="canvas-section">
+                <div class="canvas-header">모바일 버전</div>
+                <div class="canvas-box" id="dropZoneMob">
+                    
+                    <!-- 이벤트 종료 레이어 미리보기 -->
+                    <div class="event_finished" id="mobFinishedLayer" data-type="mob" style="left: 2.38%; top: 25%; width: 95.2%; height: 35.4%;">
+                        <img src="https://cbox.ebs.co.kr/portal/event/2025/08/11/01/images/event-finished.png" alt="이벤트가 종료되었습니다.">
+                        <span>6월 출석체크 이벤트는 종료되었습니다.</span>
+                        <div class="resize-handle"></div>
+                    </div>
+
+                    <!-- 숫자 박스들: resize-handle 제거됨 -->
+                    <div class="drag-box box-num1" id="mobNum1" data-type="mob" style="top: 26.3%; right: 26%; width: 5.9%; height: 1.4%;">
+                        0
+                    </div>
+                    <div class="drag-box box-num2" id="mobNum2" data-type="mob" style="top: 26.3%; right: 39.6%; width: 6.9%; height: 1.4%;">
+                        0
+                    </div>
+                    
+                    <div class="drag-box box-cal" id="mobCal" data-type="mob" style="top: 32%; left: 6%; width: 87%; height: 18.4%;">
+                        <div id="mobCanvasCalContent" style="width:100%; height:100%;"></div>
+                        <div class="resize-handle"></div>
+                    </div>
+                    <div class="drag-box box-banner" id="mobBanner1" data-type="mob" style="top: 86%; left: 5.6%; width: 88.7%; height: 6.2%;">
+                        banner1<div class="resize-handle"></div>
+                    </div>
+                    <div class="drag-box box-banner" id="mobBanner2" data-type="mob" style="top: 92.7%; left: 5.6%; width: 88.7%; height: 6.2%;">
+                        banner2<div class="resize-handle"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 하단 컨트롤 패널 영역 (좌우 분할) -->
+        <div class="panels-wrapper">
+            <div class="panel">
+                <div class="panel-header">생성된 전체 CSS (위치 및 색상 수정 반영)</div>
+                <div class="panel-body">
+                    <textarea id="cssOutput" readonly></textarea>
+                    <button class="btn-full" onclick="copyText('cssOutput')">CSS 전체 복사하기</button>
+                </div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-header">생성된 전체 HTML (달력 및 배너 반영)</div>
+                <div class="panel-body">
+                    <textarea id="htmlOutput" readonly></textarea>
+                    <button class="btn-full" onclick="copyText('htmlOutput')">HTML 전체 복사하기</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // =========================================================================
+    // 0. 종료 레이어 토글 기능
+    // =========================================================================
+    function toggleFinishedLayer() {
+        const pcLayer = document.getElementById('pcFinishedLayer');
+        const mobLayer = document.getElementById('mobFinishedLayer');
+        const btn = document.getElementById('toggleFinishedBtn');
+
+        pcLayer.classList.toggle('on');
+        mobLayer.classList.toggle('on');
+
+        if (pcLayer.classList.contains('on')) {
+            btn.textContent = '🔓 종료 레이어 끄기';
+            btn.style.backgroundColor = '#d4edda';
+            btn.style.color = '#155724';
+        } else {
+            btn.textContent = '🔒 종료 레이어 켜기';
+            btn.style.backgroundColor = '#fff3cd';
+            btn.style.color = '#856404';
+        }
+    }
+
+    // =========================================================================
+    // 1. 출석 숫자 색상 설정 연동 및 오버레이 실시간 반영
+    // =========================================================================
+    const colorPicker = document.getElementById('attendNumColor');
+    const colorText = document.getElementById('attendNumColorText');
+
+    function updateNumBoxStyles() {
+        const color = colorPicker.value;
+        const numBoxes = document.querySelectorAll('.box-num1, .box-num2');
+        numBoxes.forEach(box => {
+            box.style.color = color;
+        });
+        generateCssOutput();
+    }
+
+    colorPicker.addEventListener('input', (e) => {
+        colorText.value = e.target.value.toUpperCase();
+        updateNumBoxStyles();
+    });
+
+    colorText.addEventListener('input', (e) => {
+        const hex = e.target.value;
+        if (/^#[0-9A-F]{6}$/i.test(hex)) {
+            colorPicker.value = hex;
+            updateNumBoxStyles();
+        }
+    });
+
+    // =========================================================================
+    // 2. 이미지 업로드 처리
+    // =========================================================================
+    function handleImageUpload(files, dropZoneId) {
+        if (files.length > 0 && files[0].type.startsWith('image/')) {
+            const reader = new FileReader();
+            const dropZone = document.getElementById(dropZoneId);
+
+            reader.onload = function(e) {
+                const oldImg = dropZone.querySelector('.bg-img');
+                if(oldImg) oldImg.remove();
+                
+                const img = new Image();
+                img.src = e.target.result;
+                img.className = 'bg-img';
+                dropZone.insertBefore(img, dropZone.firstChild);
+                
+                dropZone.style.border = '1px solid #ccc';
+                setTimeout(() => generateCssOutput(), 100);
+            }
+            reader.readAsDataURL(files[0]);
+        }
+    }
+
+    document.getElementById('fileInputPc').addEventListener('change', (e) => handleImageUpload(e.target.files, 'dropZonePc'));
+    document.getElementById('fileInputMob').addEventListener('change', (e) => handleImageUpload(e.target.files, 'dropZoneMob'));
+
+    // =========================================================================
+    // 3. 드래그 & 리사이즈 처리
+    // =========================================================================
+    let isDragging = false;
+    let isResizing = false;
+    let currentElement = null;
+    let startX, startY, startLeft, startTop, startWidth, startHeight;
+    let peerElement = null;
+    let startPeerTop = 0;
+
+    document.addEventListener('mousedown', function(e) {
+        if (e.target.classList.contains('resize-handle')) {
+            isResizing = true;
+            currentElement = e.target.parentElement;
+            
+            // 높이만 조절해야 하는 요소(달력, 종료레이어)인지 체크하여 커서 고정
+            const isHeightOnly = currentElement.classList.contains('box-cal') || currentElement.classList.contains('event_finished');
+            if(isHeightOnly) {
+                document.body.classList.add('is-resizing-y');
+            } else {
+                document.body.classList.add('is-resizing-both');
+            }
+            e.preventDefault();
+        } else if (e.target.classList.contains('drag-box') || e.target.classList.contains('event_finished')) {
+            isDragging = true;
+            currentElement = e.target;
+            
+            // UX 향상을 위한 활성 클래스 부여
+            currentElement.classList.add('is-active');
+            document.body.classList.add('is-dragging'); 
+            e.preventDefault();
+
+            if (currentElement.id === 'pcNum1') peerElement = document.getElementById('pcNum2');
+            else if (currentElement.id === 'pcNum2') peerElement = document.getElementById('pcNum1');
+            else if (currentElement.id === 'mobNum1') peerElement = document.getElementById('mobNum2');
+            else if (currentElement.id === 'mobNum2') peerElement = document.getElementById('mobNum1');
+            else peerElement = null;
+
+            if (peerElement) {
+                startPeerTop = peerElement.offsetTop;
+            }
+        }
+
+        if (currentElement) {
+            startX = e.clientX;
+            startY = e.clientY;
+            startLeft = currentElement.offsetLeft;
+            startTop = currentElement.offsetTop;
+            startWidth = currentElement.offsetWidth;
+            startHeight = currentElement.offsetHeight;
+        }
+    });
+
+    document.addEventListener('mousemove', function(e) {
+        if (!currentElement) return;
+
+        const parent = currentElement.parentElement;
+        const parentWidth = parent.offsetWidth;
+        const parentHeight = parent.offsetHeight;
+
+        if (isDragging) {
+            // 상하좌우 모든 방향으로 드래그 이동 허용
+            let newTop = startTop + (e.clientY - startY);
+            let topPercent = (newTop / parentHeight) * 100;
+            currentElement.style.top = topPercent.toFixed(2) + '%';
+
+            let newLeft = startLeft + (e.clientX - startX);
+            let leftPercent = (newLeft / parentWidth) * 100;
+            currentElement.style.left = leftPercent.toFixed(2) + '%';
+
+            if (peerElement) {
+                let peerNewTop = startPeerTop + (e.clientY - startY);
+                let peerTopPercent = (peerNewTop / parentHeight) * 100;
+                peerElement.style.top = peerTopPercent.toFixed(2) + '%';
+            }
+        } else if (isResizing) {
+            // 모든 요소의 세로(높이) 조절 허용
+            let newHeight = startHeight + (e.clientY - startY);
+            let heightPercent = (newHeight / parentHeight) * 100;
+            currentElement.style.height = heightPercent.toFixed(2) + '%';
+            
+            // 달력과 종료 레이어는 가로(Width) 크기 조절 차단
+            const isHeightOnly = currentElement.classList.contains('box-cal') || currentElement.classList.contains('event_finished');
+            if (!isHeightOnly) {
+                let newWidth = startWidth + (e.clientX - startX);
+                let widthPercent = (newWidth / parentWidth) * 100;
+                currentElement.style.width = widthPercent.toFixed(2) + '%';
+            }
+        }
+        generateCssOutput();
+    });
+
+    document.addEventListener('mouseup', function() {
+        if (currentElement) {
+            currentElement.classList.remove('is-active');
+        }
+        isDragging = false;
+        isResizing = false;
+        currentElement = null;
+        peerElement = null;
+        document.body.classList.remove('is-dragging', 'is-resizing-both', 'is-resizing-y'); 
+    });
+
+    // =========================================================================
+    // 4. CSS 실시간 출력 
+    // =========================================================================
+    function getPercent(el, cssProp, parentProp) {
+        const parent = el.parentElement;
+        const val = parseFloat(getComputedStyle(el)[cssProp]);
+        const pVal = parent["offset" + parentProp];
+        return (val / pVal * 100).toFixed(2);
+    }
+
+    function generateCssOutput() {
+        const pc1 = document.getElementById('pcNum1');
+        const pc2 = document.getElementById('pcNum2');
+        const pcC = document.getElementById('pcCal');
+        const pcB1 = document.getElementById('pcBanner1');
+        const pcB2 = document.getElementById('pcBanner2');
+        const pcFin = document.getElementById('pcFinishedLayer');
+        
+        const mo1 = document.getElementById('mobNum1');
+        const mo2 = document.getElementById('mobNum2');
+        const moC = document.getElementById('mobCal');
+        const moB1 = document.getElementById('mobBanner1');
+        const moB2 = document.getElementById('mobBanner2');
+        const moFin = document.getElementById('mobFinishedLayer');
+
+        const calcRight = (left, width) => (100 - parseFloat(left) - parseFloat(width)).toFixed(2);
+        const numColor = colorPicker.value;
+
+        // PC 위치/크기
+        const pc1_t = getPercent(pc1, 'top', 'Height');
+        const pc1_w = getPercent(pc1, 'width', 'Width');
+        const pc1_h = getPercent(pc1, 'height', 'Height');
+        const pc1_r = calcRight(getPercent(pc1, 'left', 'Width'), getPercent(pc1, 'width', 'Width'));
+
+        const pc2_t = getPercent(pc2, 'top', 'Height');
+        const pc2_w = getPercent(pc2, 'width', 'Width');
+        const pc2_h = getPercent(pc2, 'height', 'Height');
+        const pc2_r = calcRight(getPercent(pc2, 'left', 'Width'), getPercent(pc2, 'width', 'Width'));
+
+        const pcC_t = getPercent(pcC, 'top', 'Height');
+        const pcC_l = getPercent(pcC, 'left', 'Width');
+        const pcC_w = getPercent(pcC, 'width', 'Width');
+        const pcC_h = getPercent(pcC, 'height', 'Height');
+
+        const pcB1_t = getPercent(pcB1, 'top', 'Height');
+        const pcB1_l = getPercent(pcB1, 'left', 'Width');
+        const pcB1_w = getPercent(pcB1, 'width', 'Width');
+        const pcB1_h = getPercent(pcB1, 'height', 'Height');
+
+        const pcB2_t = getPercent(pcB2, 'top', 'Height');
+        const pcB2_l = getPercent(pcB2, 'left', 'Width');
+        const pcB2_w = getPercent(pcB2, 'width', 'Width');
+        const pcB2_h = getPercent(pcB2, 'height', 'Height');
+
+        const pcFin_l = getPercent(pcFin, 'left', 'Width');
+        const pcFin_t = getPercent(pcFin, 'top', 'Height');
+        const pcFin_w = getPercent(pcFin, 'width', 'Width');
+        const pcFin_h = getPercent(pcFin, 'height', 'Height');
+
+        // Mobile 위치/크기
+        const mo1_t = getPercent(mo1, 'top', 'Height');
+        const mo1_r = calcRight(getPercent(mo1, 'left', 'Width'), getPercent(mo1, 'width', 'Width'));
+        const mo1_h = getPercent(mo1, 'height', 'Height');
+        const mo1_w = getPercent(mo1, 'width', 'Width');
+
+        const mo2_t = getPercent(mo2, 'top', 'Height');
+        const mo2_r = calcRight(getPercent(mo2, 'left', 'Width'), getPercent(mo2, 'width', 'Width'));
+        const mo2_h = getPercent(mo2, 'height', 'Height');
+        const mo2_w = getPercent(mo2, 'width', 'Width');
+
+        const moC_t = getPercent(moC, 'top', 'Height');
+        const moC_l = getPercent(moC, 'left', 'Width');
+        const moC_w = getPercent(moC, 'width', 'Width');
+        const moC_h = getPercent(moC, 'height', 'Height');
+
+        const moB1_t = getPercent(moB1, 'top', 'Height');
+        const moB1_l = getPercent(moB1, 'left', 'Width');
+        const moB1_w = getPercent(moB1, 'width', 'Width');
+        const moB1_h = getPercent(moB1, 'height', 'Height');
+
+        const moB2_t = getPercent(moB2, 'top', 'Height');
+        const moB2_l = getPercent(moB2, 'left', 'Width');
+        const moB2_w = getPercent(moB2, 'width', 'Width');
+        const moB2_h = getPercent(moB2, 'height', 'Height');
+
+        const moFin_l = getPercent(moFin, 'left', 'Width');
+        const moFin_t = getPercent(moFin, 'top', 'Height');
+        const moFin_w = getPercent(moFin, 'width', 'Width');
+        const moFin_h = getPercent(moFin, 'height', 'Height');
+
+        const fullCss = `<style type="text/css">
+\t.board_view_newform2 .board_view_cont{padding: 30px 0;}
+\t.event_finished > span{color: transparent;font-size: 0;text-indent: -9999px}
+\t.atten_event{max-width:1240px;margin:0 auto;}
+\t.atten_event img{width:100%}
+\t.atten_event .attend_num{position: absolute;top: ${pc1_t}%; width: ${pc1_w}%;height: ${pc1_h}%;right: ${pc1_r}%;text-align: right;color: ${numColor};font-size: 38px;font-weight: bold; letter-spacing: -0.03em; }
+\t.atten_event .attend_num02{position: absolute;top: ${pc2_t}%;width:${pc2_w}%;height: ${pc2_h}%;right: ${pc2_r}%;text-align: right;color: ${numColor};font-size: 38px;font-weight: bold; letter-spacing: -0.03em;}
+\t.atten_event .cal_wrap { position: absolute; top:${pcC_t}%; left: ${pcC_l}%; width: ${pcC_w}%; height: ${pcC_h}%;}
+\t.atten_event .cal_wrap table tbody td{width:11.2%;height:0;padding-top: 12.6%;position:relative;}
+\t.atten_event .cal_wrap table tbody td img{vertical-align:top;}
+\t.atten_event .cal_wrap table tbody td .num{display: block;width:1px;height: 1px;overflow: hidden; position: absolute;top: -1000em;left: 0}
+\t.atten_event .cal_wrap table tbody td .atten_stemp, .atten_event .cal_wrap table tbody td .com_stemp{position:absolute;top:25.6%;left:33%;width:56.8%;}
+\t.atten_event .btn_go { position: absolute; top: 92.5%; left: 27.5%; width: 12.6%; height: 0.9%;}
+\t.banner a{position:absolute;}	
+\t.banner .banner1{left: ${pcB1_l}%;top: ${pcB1_t}%;width: ${pcB1_w}%;height: ${pcB1_h}%; }
+\t.banner .banner2{left: ${pcB2_l}%;top: ${pcB2_t}%;width: ${pcB2_w}%;height: ${pcB2_h}%; }
+\t.event_finished{display:none;position: absolute;left: ${pcFin_l}%;top: ${pcFin_t}%;width: ${pcFin_w}%;height: ${pcFin_h}%;z-index: 999;border-radius: 10px;overflow: hidden;box-sizing: border-box;}
+\t.event_finished.on{ display:block; }
+\t.event_finished::after{width:100%;height: 100%;display: block;content: "";clear: both;background:#000;opacity: 0.65;position: absolute;top:0;left:0;z-index: 1;}
+\t.event_list_view .img_area .event_finished img{width: auto;max-width: 80%;height: auto;z-index: 2;position: absolute;top: 50%;left: 50%;transform: translate(-50%, -50%);display: block;}
+\t.mob_none{display:block;}
+\t.pc_none{display:none;}
+
+@media all and (max-width: 1279px) {
+\t.atten_event .attend_num{top:${pc1_t}%; font-size: 34px;}
+\t.atten_event .attend_num02{top:${pc2_t}%; font-size: 34px;}
+\t.event_finished{border-radius:10px;}
+}
+
+@media all and (max-width:1024px){
+\t.atten_event .attend_num{top:${pc1_t}%;font-size:3.5vw}
+\t.atten_event .attend_num02{top:${pc2_t}%;font-size:3.5vw}
+\t.atten_event{width:100%; margin:0}
+\t.event_finished{border-radius:10px;}
+\t.event_list_view .img_area .event_finished img{max-width: 320px;}
+}
+@media all and (max-width:767px){
+\t.atten_event .attend_num{top: ${mo1_t}%; right: ${mo1_r}%;height: ${mo1_h}%;width: ${mo1_w}%; letter-spacing: 1px;}
+\t.atten_event .attend_num02{top: ${mo2_t}%; right: ${mo2_r}%;height: ${mo2_h}%;width: ${mo2_w}%; letter-spacing: 1px;}
+\t.atten_event .cal_wrap { top: ${moC_t}%; left: ${moC_l}%; width: ${moC_w}%;height:${moC_h}%;}
+\t.atten_event .cal_wrap table tbody td{padding-top: 13.5%;}
+\t.atten_event .cal_wrap table tbody td a.atten_stemp{top:21%;left: 33.8%;height:auto;}
+\t.banner .banner1{left:${moB1_l}%;top:${moB1_t}%;width:${moB1_w}%;height:${moB1_h}%; }
+\t.banner .banner2{left:${moB2_l}%;top:${moB2_t}%;width:${moB2_w}%;height:${moB2_h}%; }
+\t.atten_event .btn_go { top: 85.2%; left: 21.7%; width: 26.3%; height: 1.2%; }
+\t.event_finished{left: ${moFin_l}%;top: ${moFin_t}%;width: ${moFin_w}%;height: ${moFin_h}%;overflow: hidden;}
+\t.event_list_view .img_area .event_finished img{max-width: 180px;}
+\t.mob_none{display:none;}
+\t.pc_none{display:block;}
+}
+<\/style>`;
+        document.getElementById('cssOutput').value = fullCss;
+    }
+
+    // =========================================================================
+    // 5. HTML 전체 소스 출력 (연도/월 연동 이벤트 기간 포함)
+    // =========================================================================
+    const yearInput = document.getElementById('eventYear');
+    const monthInput = document.getElementById('eventMonth');
+    const htmlOutput = document.getElementById('htmlOutput');
+
+    yearInput.addEventListener('input', generateCalendarHtml);
+    monthInput.addEventListener('input', generateCalendarHtml);
+    document.getElementById('banner1Url').addEventListener('input', generateCalendarHtml);
+    document.getElementById('banner1Text').addEventListener('input', generateCalendarHtml);
+    document.getElementById('banner2Url').addEventListener('input', generateCalendarHtml);
+    document.getElementById('banner2Text').addEventListener('input', generateCalendarHtml);
+
+    function generateCalendarHtml() {
+        let year = parseInt(yearInput.value);
+        let month = parseInt(monthInput.value);
+
+        if (isNaN(year) || isNaN(month) || month < 1 || month > 12) {
+            year = 2026;
+            month = 6;
+        }
+
+        const firstDayObj = new Date(year, month - 1, 1);
+        const lastDateObj = new Date(year, month, 0);
+        
+        const firstDay = firstDayObj.getDay(); 
+        const lastDate = lastDateObj.getDate();    
+
+        const weekDays = ['일', '월', '화', '수', '목', '금', '토'];
+        const firstDayStr = weekDays[firstDayObj.getDay()];
+        const lastDayStr = weekDays[lastDateObj.getDay()];
+
+        const htmlPrefix = `<div class="atten_event pc_wd980">
+\t\t\t\t\t\t<div style="position:relative">
+\t\t\t\t\t\t\t<img src="images/event_pc01.jpg" alt="EBS 초등 ${month}월 출석체크 이벤트" class="mob_none" />
+\t\t\t\t\t\t\t<img src="images/event_mobile01.jpg" alt="EBS 초등 ${month}월 출석체크 이벤트" class="pc_none" />
+\t\t\t\t\t\t\t<!-- 이벤트 기간 종료 -->
+\t\t\t\t\t\t\t<div class="event_finished">
+\t\t\t\t\t\t\t\t<img src="https://cbox.ebs.co.kr/portal/event/2025/08/11/01/images/event-finished.png" alt="이벤트가 종료되었습니다." />
+\t\t\t\t\t\t\t\t<span>${month}월 출석체크 이벤트는 종료되었습니다.</span>
+\t\t\t\t\t\t\t</div>
+\t\t\t\t\t\t\t<!-- // 이벤트 기간 종료 -->
+\t\t\t\t\t\t\t<div class="alt_hidden">
+\t\t\t\t\t\t\t\t<span>새해 복 많이 받으란 말이야!</span>
+\t\t\t\t\t\t\t\t<h2>${year}년 ${month}월 출석체크 이벤트</h2>
+\t\t\t\t\t\t\t\t<p>매일매일 공부하는 좋은 습관을 들여보세요! 꾸준하게 출석하신 분에게는 모바일상품권을 드립니다. EBS 초등에서 우리 매일 매일 만나요!</p>
+\t\t\t\t\t\t\t</div>
+\t\t\t\t\t\t\t<span class="attend_num02">0</span>
+\t\t\t\t\t\t\t<span class="attend_num">0</span>\n`;
+
+        const htmlTail = `\t\t\t\t\t\t\t<div class="alt_hidden">
+\t\t\t\t\t\t\t\t<dl>
+\t\t\t\t\t\t\t\t\t<dt>의병의 날 6.1</dt>
+\t\t\t\t\t\t\t\t\t<dd>외국의 침략에 맞서 자발적으로 전쟁에 참여한 의병의 희생정신과 나라사랑 정신을 고취하기 위해 제정한 기념일입니다.</dd>
+\t\t\t\t\t\t\t\t\t<dt>제9회 전국동시지방선거일 6.3</dt>
+\t\t\t\t\t\t\t\t\t<dd>제9회 전국동시지방선거일 입니다.</dd>
+\t\t\t\t\t\t\t\t\t<dt>환경의 날 6.5</dt>
+\t\t\t\t\t\t\t\t\t<dd>환경보호에 대한 전 세계의 관심과 행동을 촉구하기 위해 제정한 국제연합(UN) 기념일입니다.</dd>
+\t\t\t\t\t\t\t\t\t<dt>현충일 6.6</dt>
+\t\t\t\t\t\t\t\t\t<dd>나라를 위해 목숨바친 국군장병들과 호국영령들을 추모하기 위해 지정된 법정기념일로 추념식과 참배행사, 각종 추모기념식이 국립현충원에서 거행되며, 기업·단체·가정 등에서는 조기를 게양합니다.</dd>
+\t\t\t\t\t\t\t\t\t<dt>6.10 민주항쟁 기념일 6.10</dt>
+\t\t\t\t\t\t\t\t\t<dd>6월 민주항쟁을 기념하고 민주주의 정신을 계승하기 위해 제정한 기념일입니다.</dd>
+\t\t\t\t\t\t\t\t\t<dt>6.25 전쟁일 6.25</dt>
+\t\t\t\t\t\t\t\t\t<dd>6·25 사변이라고도 하며, 국제적으로는 한국 전쟁이라 불립니다. 1953년 7월 27일 휴전 협정이 체결될 때까지 전투가 계속되었고 현재 남북한은 휴전 상태로 오늘에 이르고 있습니다.</dd>
+\t\t\t\t\t\t\t\t</dl>        
+\t\t\t\t\t\t\t\t<dl>
+\t\t\t\t\t\t\t\t\t<dt>이벤트 참여안내</dt>
+\t\t\t\t\t\t\t\t\t<dd>이벤트 대상 : EBS 초등 사이트를 이용하시는 모든 회원</dd>
+\t\t\t\t\t\t\t\t\t<dd>이벤트 기간 : ${year}. ${month}. 1.(${firstDayStr}) ~ ${year}. ${month}. ${lastDate}.(${lastDayStr})</dd>
+\t\t\t\t\t\t\t\t\t<dd>당첨자 발표 : 이벤트 종료 후 1주일 이내 당첨자 발표 게시판에 공지</dd>
+\t\t\t\t\t\t\t\t\t<dd>참여 방법 : 달력에서 오늘 날짜의 &lt;출석하기&gt; 버튼을 클릭하면 출석 완료</dd>
+\t\t\t\t\t\t\t\t\t<dd>당첨자 상품 : 10일, 25일 이상 출석 체크한 회원을 대상으로 당첨자 추첨 TIP! 이벤트 기간 중 더 많이 출석하고 EBS 초등 강좌를 많이 수강할수록 당첨 확률이 올라갑니다!</dd>
+\t\t\t\t\t\t\t\t\t<dd>25일 이상 출석 (5명) [GS25] 모바일 상품권 5,000원</dd>
+\t\t\t\t\t\t\t\t\t<dd>10일 이상 출석 (10명) [GS25] 모바일 상품권 2,000원</dd>
+\t\t\t\t\t\t\t\t</dl>
+\t\t\t\t\t\t\t</div>
+\t\t\t\t\t\t</div>
+\t\t\t\t\t</div>`;
+
+        let calHtml = '\t\t\t\t\t\t\t<div class="cal_wrap">\n';
+        calHtml += '\t\t\t\t\t\t\t\t<table cellpadding="0" cellspacing="0" summary="출석이벤트 페이지입니다.">\n';
+        calHtml += '\t\t\t\t\t\t\t\t\t<caption>출석이벤트 페이지입니다.</caption>\n';
+        calHtml += '\t\t\t\t\t\t\t\t\t<thead class="alt_hidden">\n';
+        calHtml += '\t\t\t\t\t\t\t\t\t\t<tr>\n';
+        calHtml += '\t\t\t\t\t\t\t\t\t\t\t<th scope="col">일</th>\n';
+        calHtml += '\t\t\t\t\t\t\t\t\t\t\t<th scope="col" class="bg_st02">월</th>\n';
+        calHtml += '\t\t\t\t\t\t\t\t\t\t\t<th scope="col" class="bg_st03">화</th>\n';
+        calHtml += '\t\t\t\t\t\t\t\t\t\t\t<th scope="col" class="bg_st02">수</th>\n';
+        calHtml += '\t\t\t\t\t\t\t\t\t\t\t<th scope="col" class="bg_st03">목</th>\n';
+        calHtml += '\t\t\t\t\t\t\t\t\t\t\t<th scope="col" class="bg_st02">금</th>\n';
+        calHtml += '\t\t\t\t\t\t\t\t\t\t\t<th scope="col" class="bg_st03">토</th>\n';
+        calHtml += '\t\t\t\t\t\t\t\t\t\t</tr>\n';
+        calHtml += '\t\t\t\t\t\t\t\t\t</thead>\n';
+        calHtml += '\t\t\t\t\t\t\t\t\t<tbody>\n';
+
+        let dateNum = 1;
+        const totalWeeks = Math.ceil((firstDay + lastDate) / 7);
+
+        for (let i = 0; i < totalWeeks; i++) {
+            calHtml += '\t\t\t\t\t\t\t\t\t\t<tr>\n';
+            for (let j = 0; j < 7; j++) {
+                if ((i === 0 && j < firstDay) || dateNum > lastDate) {
+                    calHtml += '\t\t\t\t\t\t\t\t\t\t\t<td><span></span></td>\n';
+                } else {
+                    if (dateNum === 11) {
+                        calHtml += '\t\t\t\t\t\t\t\t\t\t\t<td>\n';
+                        calHtml += '\t\t\t\t\t\t\t\t\t\t\t\t<span class="num" id="11">11</span>\n';
+                        calHtml += '\t\t\t\t\t\t\t\t\t\t\t\t<a href="javascript:;" class="atten_stemp"><img src="https://cbox.ebs.co.kr/portal/event/2022/12/29/01/images/attend_stamp.png" alt="출석 도장"></a>\n';
+                        calHtml += '\t\t\t\t\t\t\t\t\t\t\t</td>\n';
+                    } else if (dateNum === 12) {
+                        calHtml += '\t\t\t\t\t\t\t\t\t\t\t<td>\n';
+                        calHtml += '\t\t\t\t\t\t\t\t\t\t\t\t<span class="num" id="12">12</span>\n';
+                        calHtml += '\t\t\t\t\t\t\t\t\t\t\t\t<a href="javascript:;" onclick="eventWinPopCheck();" class="atten_stemp"><img src="https://cbox.ebs.co.kr/portal/event/2022/12/29/01/images/attend_no_stamp.png" alt="미출석 도장"></a>\n';
+                        calHtml += '\t\t\t\t\t\t\t\t\t\t\t</td>\n';
+                    } else {
+                        calHtml += `\t\t\t\t\t\t\t\t\t\t\t<td><span class="num" id="${dateNum}">${dateNum}</span></td>\n`;
+                    }
+                    dateNum++;
+                }
+            }
+            calHtml += '\t\t\t\t\t\t\t\t\t\t</tr>\n';
+        }
+
+        calHtml += '\t\t\t\t\t\t\t\t\t</tbody>\n';
+        calHtml += '\t\t\t\t\t\t\t\t</table>\n';
+        calHtml += '\t\t\t\t\t\t\t</div>\n';
+
+        document.getElementById('pcCanvasCalContent').innerHTML = calHtml;
+        document.getElementById('mobCanvasCalContent').innerHTML = calHtml;
+
+        const b1Url = document.getElementById('banner1Url').value || 'URL을 넣어주세요';
+        const b1Text = document.getElementById('banner1Text').value || '배너text 입력해주세요';
+        const b2Url = document.getElementById('banner2Url').value || 'URL을 넣어주세요';
+        const b2Text = document.getElementById('banner2Text').value || '배너text 입력해주세요';
+
+        let bannerHtml = `\t\t\t\t\t\t\t<div class="banner">
+\t\t\t\t\t\t\t\t<a href="${b1Url}" class="banner1"><span class="hidden_text">${b1Text}</span></a>
+\t\t\t\t\t\t\t\t<a href="${b2Url}" class="banner2"><span class="hidden_text">${b2Text}</span></a>  
+\t\t\t\t\t\t\t</div>\n`;
+
+        htmlOutput.value = htmlPrefix + calHtml + bannerHtml + htmlTail;
+    }
+
+    function copyText(elementId) {
+        const textarea = document.getElementById(elementId);
+        textarea.select();
+        document.execCommand('copy');
+        alert("복사되었습니다!");
+    }
+
+    window.addEventListener('load', () => {
+        updateNumBoxStyles();
+        generateCalendarHtml();
+    });
+</script>
+</body>
+</html>

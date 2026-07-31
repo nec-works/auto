@@ -1,0 +1,1502 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>이벤트 페이지 자동 소스 삽입</title>
+    <!-- 안정적인 텍스트 추출(OCR)을 위한 Tesseract.js 로드 -->
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+    <style>
+        :root {
+            --blue: #3498db;
+            --blue-dark: #2980b9;
+            --red: #e74c3c;
+            --red-dark: #c0392b;
+            --green: #27ae60;
+            --border: #dfe5e8;
+            --text: #2c3e50;
+            --muted: #73808c;
+            --panel: #f7f9fa;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            font-family: "Segoe UI", "Noto Sans KR", Arial, sans-serif;
+            background-color: #f4f7f6;
+            margin: 0;
+            padding: 20px;
+            color: #333;
+        }
+
+        button,
+        input,
+        textarea {
+            font: inherit;
+        }
+
+        .container {
+            max-width: 1500px;
+            margin: 0 auto;
+            background: #fff;
+            padding: 24px;
+            border-radius: 12px;
+            box-shadow: 0 4px 18px rgba(0, 0, 0, 0.06);
+        }
+
+        h2 {
+            margin: 0 0 8px;
+            color: var(--text);
+        }
+
+        .description {
+            margin: 0 0 18px;
+            color: var(--muted);
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        .controls {
+            margin-bottom: 18px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .file-label {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 9px 14px;
+            border: 1px solid var(--border);
+            border-radius: 7px;
+            background: #fff;
+            cursor: pointer;
+            font-weight: 700;
+        }
+
+        .file-label:hover { border-color: var(--blue); }
+        .file-label input { display: none; }
+
+        .paste-badge {
+            padding: 8px 12px;
+            border-radius: 7px;
+            background: #edf6fc;
+            color: #2477ad;
+            font-size: 13px;
+            font-weight: 700;
+        }
+
+        .workspace {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 420px;
+            gap: 20px;
+            align-items: start;
+        }
+
+        .stage-panel {
+            min-width: 0;
+        }
+
+        .stage-guide {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 8px;
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .image-container {
+            position: relative;
+            display: block;
+            border: 2px dashed #c9d1d5;
+            width: 100%;
+            height: 100%;
+            min-height: 500px;
+            overflow: hidden;
+            background: #fafafa;
+            cursor: crosshair;
+            user-select: none;
+            touch-action: none;
+            transition: border-color 0.2s, background-color 0.2s;
+            vertical-align: top;
+        }
+
+        .image-container.drag-over,
+        .image-container.paste-ready {
+            border-color: var(--blue);
+            background-color: #eef7fd;
+        }
+
+        .image-container img {
+            display: block;
+            width: 100%;
+            height: auto;
+            pointer-events: none;
+            user-select: none;
+        }
+
+        .placeholder {
+            position: absolute;
+            inset: 0;
+            padding: 48px 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            color: #7f8c8d;
+            line-height: 1.7;
+            margin: 0;
+            pointer-events: none;
+        }
+
+        .drawing-box {
+            position: absolute;
+            border: 2px solid var(--red);
+            background: rgba(231, 76, 60, 0.2);
+            pointer-events: none;
+            z-index: 30;
+        }
+
+        .link-box {
+            position: absolute;
+            border: 2px solid var(--blue);
+            background: rgba(52, 152, 219, 0.25);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            font-weight: 800;
+            font-size: 13px;
+            box-sizing: border-box;
+            cursor: move;
+            z-index: 10;
+            touch-action: none;
+        }
+
+        .link-box:hover {
+            background: rgba(52, 152, 219, 0.36);
+        }
+
+        .link-box.selected {
+            border-color: var(--red);
+            background: rgba(231, 76, 60, 0.28);
+            z-index: 20;
+            outline: 1px solid rgba(255, 255, 255, 0.85);
+        }
+
+        .link-number {
+            pointer-events: none;
+            background: rgba(0, 0, 0, 0.55);
+            border-radius: 999px;
+            min-width: 24px;
+            height: 24px;
+            padding: 0 7px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .resize-handle {
+            position: absolute;
+            width: 11px;
+            height: 11px;
+            border: 2px solid var(--red);
+            background: #fff;
+            border-radius: 2px;
+            z-index: 25;
+        }
+
+        .handle-nw { left: -7px; top: -7px; cursor: nwse-resize; }
+        .handle-n  { left: 50%; top: -7px; transform: translateX(-50%); cursor: ns-resize; }
+        .handle-ne { right: -7px; top: -7px; cursor: nesw-resize; }
+        .handle-e  { right: -7px; top: 50%; transform: translateY(-50%); cursor: ew-resize; }
+        .handle-se { right: -7px; bottom: -7px; cursor: nwse-resize; }
+        .handle-s  { left: 50%; bottom: -7px; transform: translateX(-50%); cursor: ns-resize; }
+        .handle-sw { left: -7px; bottom: -7px; cursor: nesw-resize; }
+        .handle-w  { left: -7px; top: 50%; transform: translateY(-50%); cursor: ew-resize; }
+
+        .side-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            min-width: 0;
+        }
+
+        .panel-card {
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 15px;
+            background: #fff;
+        }
+
+        .panel-title-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+
+        .panel-title {
+            margin: 0;
+            font-size: 15px;
+            color: var(--text);
+        }
+
+        .selected-name {
+            color: var(--blue-dark);
+            font-weight: 800;
+            font-size: 13px;
+        }
+
+        .empty-editor {
+            padding: 20px 10px;
+            text-align: center;
+            color: var(--muted);
+            font-size: 13px;
+            line-height: 1.6;
+            background: var(--panel);
+            border-radius: 8px;
+        }
+
+        .editor-body[hidden] { display: none; }
+
+        .field-label {
+            display: block;
+            margin-bottom: 6px;
+            color: var(--text);
+            font-size: 13px;
+            font-weight: 800;
+        }
+
+        .message-input,
+        .url-input,
+        .number-input,
+        .code-output {
+            width: 100%;
+            border: 1px solid #ccd5da;
+            border-radius: 7px;
+            background: #fff;
+            color: #333;
+        }
+
+        .message-input {
+            min-height: 74px;
+            padding: 10px;
+            resize: vertical;
+            line-height: 1.5;
+        }
+
+        .url-input {
+            padding: 10px;
+        }
+
+        .message-input:focus,
+        .url-input:focus,
+        .number-input:focus,
+        .code-output:focus {
+            outline: 2px solid rgba(52, 152, 219, 0.18);
+            border-color: var(--blue);
+        }
+
+        .action-control {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 5px;
+            padding: 4px;
+            margin-bottom: 12px;
+            background: #eef2f4;
+            border-radius: 8px;
+        }
+
+        .action-control input { display: none; }
+
+        .action-control label {
+            padding: 9px 6px;
+            border-radius: 6px;
+            text-align: center;
+            font-size: 12px;
+            font-weight: 800;
+            color: #61707b;
+            cursor: pointer;
+        }
+
+        .action-control input:checked + label {
+            background: #fff;
+            color: var(--blue-dark);
+            box-shadow: 0 1px 5px rgba(0, 0, 0, 0.1);
+        }
+
+        .action-field { margin-bottom: 14px; }
+        .action-field[hidden] { display: none; }
+
+        .inline-check {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            margin-top: 8px;
+            color: #586873;
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        .inline-check input {
+            width: 16px;
+            height: 16px;
+            margin: 0;
+        }
+
+        .number-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 9px;
+            margin-top: 10px;
+        }
+
+        .number-field {
+            min-width: 0;
+        }
+
+        .number-input-wrap {
+            position: relative;
+        }
+
+        .number-input {
+            padding: 9px 30px 9px 9px;
+            font-family: Consolas, monospace;
+        }
+
+        .unit {
+            position: absolute;
+            right: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--muted);
+            font-size: 12px;
+            pointer-events: none;
+        }
+
+        .nudge-row {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 6px;
+            margin-top: 10px;
+        }
+
+        .region-list {
+            display: flex;
+            flex-direction: column;
+            gap: 7px;
+            max-height: 250px;
+            overflow: auto;
+        }
+
+        .region-empty {
+            color: var(--muted);
+            font-size: 13px;
+            text-align: center;
+            padding: 14px;
+            background: var(--panel);
+            border-radius: 7px;
+        }
+
+        .region-item {
+            display: grid;
+            grid-template-columns: 28px minmax(0, 1fr) auto;
+            gap: 8px;
+            align-items: center;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 8px;
+            cursor: pointer;
+            background: #fff;
+        }
+
+        .region-item:hover { border-color: #b8c8d1; }
+        .region-item.selected { border-color: var(--blue); background: #f1f8fd; }
+        .region-item.dragging { opacity: 0.45; }
+        .region-item.drag-target { border-style: dashed; border-color: var(--blue); }
+
+        .drag-handle {
+            color: #9aa7af;
+            text-align: center;
+            cursor: grab;
+            font-size: 18px;
+            line-height: 1;
+        }
+
+        .region-summary {
+            min-width: 0;
+        }
+
+        .region-name {
+            display: block;
+            color: var(--text);
+            font-size: 13px;
+            font-weight: 800;
+        }
+
+        .region-message {
+            display: block;
+            margin-top: 2px;
+            color: var(--muted);
+            font-size: 11px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .item-actions {
+            display: flex;
+            gap: 4px;
+        }
+
+        button {
+            padding: 9px 14px;
+            background: var(--blue);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 800;
+        }
+
+        button:hover { background: var(--blue-dark); }
+        button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+        button.secondary {
+            background: #667784;
+        }
+
+        button.secondary:hover { background: #53636f; }
+
+        button.danger { background: var(--red); }
+        button.danger:hover { background: var(--red-dark); }
+
+        button.light {
+            padding: 6px 8px;
+            background: #edf1f3;
+            color: #41515d;
+            font-size: 12px;
+        }
+
+        button.light:hover { background: #dfe6e9; }
+        button.light.danger-text { color: var(--red-dark); }
+
+        .code-output {
+            min-height: 140px;
+            padding: 12px;
+            font-family: Consolas, "Courier New", monospace;
+            font-size: 12px;
+            line-height: 1.5;
+            resize: vertical;
+            margin-bottom: 8px;
+        }
+
+        .output-actions {
+            display: flex;
+            justify-content: flex-end;
+            margin-bottom: 20px;
+        }
+
+        .output-actions:last-child {
+            margin-bottom: 0;
+        }
+
+        .keyboard-help {
+            margin-top: 10px;
+            color: var(--muted);
+            font-size: 11px;
+            line-height: 1.55;
+        }
+
+        .toast {
+            position: fixed;
+            left: 50%;
+            bottom: 24px;
+            transform: translate(-50%, 15px);
+            padding: 10px 16px;
+            background: rgba(35, 48, 57, 0.94);
+            color: #fff;
+            border-radius: 8px;
+            font-size: 13px;
+            opacity: 0;
+            pointer-events: none;
+            transition: 0.2s ease;
+            z-index: 1000;
+        }
+
+        .toast.show {
+            opacity: 1;
+            transform: translate(-50%, 0);
+        }
+
+        @media (max-width: 1050px) {
+            .workspace { grid-template-columns: 1fr; }
+            .side-panel { width: 100%; }
+        }
+
+        @media (max-width: 600px) {
+            body { padding: 8px; }
+            .container { padding: 14px; }
+            .image-container { width: 100%; }
+            .stage-guide { flex-direction: column; gap: 3px; }
+            .number-grid { grid-template-columns: 1fr 1fr; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>이벤트 페이지 자동 소스 삽입</h2>
+    <p class="description">
+        - 이미지 복사후 붙여넣기 or 드래그 or 업로드 후 영역을 그리세요<br>
+        - 영역 내 텍스트는 자동으로 <code>&lt;a&gt;</code> 태그 내부에 단순 텍스트로 입력되며, 하단에는 빈 <code>&lt;div class="alt_hidden"&gt;</code>가 생성됩니다.
+    </p>
+
+    <div class="controls">
+        <label class="file-label" for="imageLoader">
+            이미지 선택
+            <input type="file" id="imageLoader" accept="image/*">
+        </label>
+        <span class="paste-badge">클립보드 이미지 붙여넣기: Ctrl+V</span>
+        <button class="danger" id="resetBtn" type="button">전체 초기화</button>
+    </div>
+
+    <div class="workspace">
+        <section class="stage-panel">
+            <div class="stage-guide">
+                <span>빈 곳 드래그: 새 영역 생성</span>
+                <span>영역 드래그: 이동 · 모서리/변 드래그: 크기 조정</span>
+            </div>
+            <div class="image-container paste-ready" id="imageContainer">
+                <p class="placeholder" id="placeholderText">
+                    이미지를 업로드하거나 이곳에 드래그하세요.<br>
+                    캡처한 이미지는 Ctrl+V로 바로 붙여넣을 수 있습니다.
+                </p>
+                <img id="targetImage" alt="작업 이미지" style="display: none;">
+            </div>
+        </section>
+
+        <aside class="side-panel">
+            <section class="panel-card">
+                <div class="panel-title-row">
+                    <h3 class="panel-title">선택 영역 설정</h3>
+                    <span class="selected-name" id="selectedName">선택 없음</span>
+                </div>
+
+                <div class="empty-editor" id="emptyEditor">
+                    이미지 위에서 영역을 만들거나 기존 영역을 선택하세요.
+                </div>
+
+                <div class="editor-body" id="editorBody" hidden>
+                    <span class="field-label">클릭 동작</span>
+                    <div class="action-control" role="radiogroup" aria-label="클릭 동작 선택">
+                        <input type="radio" name="actionType" id="actionUrl" value="url" checked>
+                        <label for="actionUrl">URL 연결</label>
+                        <input type="radio" name="actionType" id="actionAlert" value="alert">
+                        <label for="actionAlert">Alert 문구</label>
+                    </div>
+
+                    <div class="action-field" id="urlField">
+                        <label class="field-label" for="linkUrl">연결 URL</label>
+                        <input class="url-input" type="text" id="linkUrl" placeholder="URL">
+                        <label class="inline-check" for="openNewTab">
+                            <input type="checkbox" id="openNewTab">
+                            새 창에서 열기
+                        </label>
+                    </div>
+
+                    <div class="action-field" id="alertField" hidden>
+                        <label class="field-label" for="alertMessage">클릭 시 표시할 Alert 문구</label>
+                        <textarea class="message-input" id="alertMessage" placeholder="Alert 문구"></textarea>
+                    </div>
+
+                    <div class="action-field">
+                        <label class="field-label" for="altTextInput">링크 내부 텍스트 (&lt;a&gt; 태그 안)</label>
+                        <textarea class="message-input" id="altTextInput" placeholder="영역 지정 시 텍스트가 자동 추출됩니다. 직접 입력/수정 가능."></textarea>
+                    </div>
+
+                    <div class="number-grid">
+                        <div class="number-field">
+                            <label class="field-label" for="leftInput">왼쪽 위치</label>
+                            <div class="number-input-wrap">
+                                <input class="number-input" type="number" id="leftInput" min="0" max="100" step="0.01">
+                                <span class="unit">%</span>
+                            </div>
+                        </div>
+                        <div class="number-field">
+                            <label class="field-label" for="topInput">위쪽 위치</label>
+                            <div class="number-input-wrap">
+                                <input class="number-input" type="number" id="topInput" min="0" max="100" step="0.01">
+                                <span class="unit">%</span>
+                            </div>
+                        </div>
+                        <div class="number-field">
+                            <label class="field-label" for="widthInput">가로 크기</label>
+                            <div class="number-input-wrap">
+                                <input class="number-input" type="number" id="widthInput" min="0.1" max="100" step="0.01">
+                                <span class="unit">%</span>
+                            </div>
+                        </div>
+                        <div class="number-field">
+                            <label class="field-label" for="heightInput">세로 크기</label>
+                            <div class="number-input-wrap">
+                                <input class="number-input" type="number" id="heightInput" min="0.1" max="100" step="0.01">
+                                <span class="unit">%</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="nudge-row" aria-label="미세 이동">
+                        <button class="light" type="button" data-nudge="left" title="왼쪽으로 0.1%">←</button>
+                        <button class="light" type="button" data-nudge="up" title="위로 0.1%">↑</button>
+                        <button class="light" type="button" data-nudge="down" title="아래로 0.1%">↓</button>
+                        <button class="light" type="button" data-nudge="right" title="오른쪽으로 0.1%">→</button>
+                    </div>
+
+                    <div class="keyboard-help">
+                        방향키로 0.1% 이동, Shift+방향키로 1% 이동합니다.
+                    </div>
+                </div>
+            </section>
+
+            <section class="panel-card">
+                <div class="panel-title-row">
+                    <h3 class="panel-title">영역 순서</h3>
+                    <span class="selected-name" id="regionCount">0개</span>
+                </div>
+                <div class="region-list" id="regionList">
+                    <div class="region-empty">생성된 영역이 없습니다.</div>
+                </div>
+            </section>
+
+            <section class="panel-card">
+                <label class="field-label" for="outputCssCode">생성된 CSS 결과</label>
+                <textarea id="outputCssCode" class="code-output" readonly placeholder="영역을 만들면 CSS 코드가 생성됩니다."></textarea>
+                <div class="output-actions">
+                    <button id="copyCssBtn" type="button">CSS 복사하기</button>
+                </div>
+
+                <label class="field-label" for="outputHtmlCode">생성된 HTML 결과</label>
+                <textarea id="outputHtmlCode" class="code-output" readonly placeholder="영역을 만들면 HTML 코드가 생성됩니다."></textarea>
+                <div class="output-actions">
+                    <button id="copyHtmlBtn" type="button">HTML 복사하기</button>
+                </div>
+            </section>
+        </aside>
+    </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+    const imageLoader = document.getElementById('imageLoader');
+    const imageContainer = document.getElementById('imageContainer');
+    const targetImage = document.getElementById('targetImage');
+    const placeholderText = document.getElementById('placeholderText');
+    const outputCssCode = document.getElementById('outputCssCode');
+    const outputHtmlCode = document.getElementById('outputHtmlCode');
+    const resetBtn = document.getElementById('resetBtn');
+    const copyCssBtn = document.getElementById('copyCssBtn');
+    const copyHtmlBtn = document.getElementById('copyHtmlBtn');
+    const selectedName = document.getElementById('selectedName');
+    const emptyEditor = document.getElementById('emptyEditor');
+    const editorBody = document.getElementById('editorBody');
+    const actionTypeInputs = document.querySelectorAll('input[name="actionType"]');
+    const actionUrl = document.getElementById('actionUrl');
+    const actionAlert = document.getElementById('actionAlert');
+    const urlField = document.getElementById('urlField');
+    const alertField = document.getElementById('alertField');
+    const linkUrl = document.getElementById('linkUrl');
+    const openNewTab = document.getElementById('openNewTab');
+    const alertMessage = document.getElementById('alertMessage');
+    const altTextInput = document.getElementById('altTextInput');
+    const leftInput = document.getElementById('leftInput');
+    const topInput = document.getElementById('topInput');
+    const widthInput = document.getElementById('widthInput');
+    const heightInput = document.getElementById('heightInput');
+    const regionList = document.getElementById('regionList');
+    const regionCount = document.getElementById('regionCount');
+    const toast = document.getElementById('toast');
+
+    const MIN_SIZE_PERCENT = 0.25;
+    const MIN_DRAW_PIXELS = 8;
+
+    let links = [];
+    let selectedId = null;
+    let nextId = 1;
+    let interaction = null;
+    let drawingBox = null;
+    let draggedListId = null;
+    let toastTimer = null;
+    let ocrDetections = [];
+
+    function showToast(message) {
+        toast.textContent = message;
+        toast.classList.add('show');
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => toast.classList.remove('show'), 1800);
+    }
+
+    function round(value) {
+        return Math.round(Number(value) * 100) / 100;
+    }
+
+    function clamp(value, min, max) {
+        return Math.min(Math.max(Number(value), min), max);
+    }
+
+    function getSelectedLink() {
+        return links.find(link => link.id === selectedId) || null;
+    }
+
+    function normalizeLink(link) {
+        link.width = clamp(link.width, MIN_SIZE_PERCENT, 100);
+        link.height = clamp(link.height, MIN_SIZE_PERCENT, 100);
+        link.left = clamp(link.left, 0, 100 - link.width);
+        link.top = clamp(link.top, 0, 100 - link.height);
+
+        link.left = round(link.left);
+        link.top = round(link.top);
+        link.width = round(link.width);
+        link.height = round(link.height);
+    }
+
+    function renumberLinks() {
+        links.forEach((link, index) => {
+            const numStr = String(index + 1).padStart(2, '0');
+            link.className = `link_btn_${numStr}`;
+        });
+    }
+
+    // Tesseract.js 문장(lines) 단위 추출
+    async function performOCR(imgElement) {
+        ocrDetections = [];
+        showToast('이미지 텍스트를 추출하고 있습니다. (수 초가 소요될 수 있습니다)');
+        
+        try {
+            const result = await Tesseract.recognize(imgElement.src, 'kor+eng');
+            const lines = result.data.lines; 
+            const natW = imgElement.naturalWidth;
+            const natH = imgElement.naturalHeight;
+
+            ocrDetections = lines.map(item => {
+                const box = item.bbox;
+                return {
+                    text: item.text.trim(),
+                    left: (box.x0 / natW) * 100,
+                    top: (box.y0 / natH) * 100,
+                    width: ((box.x1 - box.x0) / natW) * 100,
+                    height: ((box.y1 - box.y0) / natH) * 100
+                };
+            });
+            showToast('텍스트 추출 완료! 영역 지정 시 내용이 자동 입력됩니다.');
+            updateOutput();
+        } catch (e) {
+            console.error('OCR Error:', e);
+            showToast('텍스트를 자동 추출할 수 없습니다. 내용을 직접 입력해주세요.');
+        }
+    }
+
+    function isOverlapping(det, link) {
+        const overlapX = Math.max(0, Math.min(link.left + link.width, det.left + det.width) - Math.max(link.left, det.left));
+        const overlapY = Math.max(0, Math.min(link.top + link.height, det.top + det.height) - Math.max(link.top, det.top));
+        
+        const overlapArea = overlapX * overlapY;
+        const detArea = det.width * det.height;
+        return overlapArea > (detArea * 0.2);
+    }
+
+    function findOcrTextForBox(link) {
+        const matches = ocrDetections.filter(det => isOverlapping(det, link));
+        if (matches.length > 0) {
+            return matches.map(m => m.text).join('\n');
+        }
+        return '';
+    }
+
+    function resetRegions() {
+        links = [];
+        selectedId = null;
+        nextId = 1;
+        interaction = null;
+        drawingBox?.remove();
+        drawingBox = null;
+        ocrDetections = [];
+        renderAll();
+    }
+
+    function resetAll() {
+        resetRegions();
+        targetImage.removeAttribute('src');
+        targetImage.style.display = 'none';
+        placeholderText.style.display = 'flex';
+        imageContainer.classList.add('paste-ready');
+        imageLoader.value = '';
+    }
+
+    function loadFile(file) {
+        if (!file || !file.type.startsWith('image/')) {
+            showToast('이미지 파일만 넣을 수 있습니다.');
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = event => {
+            targetImage.onload = async () => {
+                resetRegions();
+                targetImage.style.display = 'block';
+                placeholderText.style.display = 'none';
+                imageContainer.classList.remove('paste-ready');
+                await performOCR(targetImage);
+            };
+            targetImage.src = event.target.result;
+        };
+        reader.readAsDataURL(file);
+    }
+
+    imageLoader.addEventListener('change', event => {
+        loadFile(event.target.files?.[0]);
+    });
+
+    document.addEventListener('paste', event => {
+        const items = Array.from(event.clipboardData?.items || []);
+        const imageItem = items.find(item => item.type.startsWith('image/'));
+        if (!imageItem) return;
+
+        const file = imageItem.getAsFile();
+        if (!file) return;
+
+        event.preventDefault();
+        loadFile(file);
+    });
+
+    imageContainer.addEventListener('dragover', event => {
+        event.preventDefault();
+        imageContainer.classList.add('drag-over');
+    });
+
+    imageContainer.addEventListener('dragleave', event => {
+        event.preventDefault();
+        imageContainer.classList.remove('drag-over');
+    });
+
+    imageContainer.addEventListener('drop', event => {
+        event.preventDefault();
+        imageContainer.classList.remove('drag-over');
+        loadFile(event.dataTransfer?.files?.[0]);
+    });
+
+    function pointToImagePercent(clientX, clientY) {
+        const rect = targetImage.getBoundingClientRect();
+        return {
+            x: clamp(((clientX - rect.left) / rect.width) * 100, 0, 100),
+            y: clamp(((clientY - rect.top) / rect.height) * 100, 0, 100)
+        };
+    }
+
+    function startDrawing(event) {
+        if (!targetImage.src || targetImage.style.display === 'none') return;
+        if (event.button !== undefined && event.button !== 0) return;
+
+        const point = pointToImagePercent(event.clientX, event.clientY);
+        interaction = {
+            type: 'draw',
+            pointerId: event.pointerId,
+            startX: point.x,
+            startY: point.y,
+            currentX: point.x,
+            currentY: point.y
+        };
+
+        drawingBox = document.createElement('div');
+        drawingBox.className = 'drawing-box';
+        imageContainer.appendChild(drawingBox);
+        imageContainer.setPointerCapture?.(event.pointerId);
+        updateDrawingBox();
+        event.preventDefault();
+    }
+
+    function updateDrawingBox() {
+        if (!interaction || interaction.type !== 'draw' || !drawingBox) return;
+        const left = Math.min(interaction.startX, interaction.currentX);
+        const top = Math.min(interaction.startY, interaction.currentY);
+        const width = Math.abs(interaction.currentX - interaction.startX);
+        const height = Math.abs(interaction.currentY - interaction.startY);
+
+        drawingBox.style.left = `${left}%`;
+        drawingBox.style.top = `${top}%`;
+        drawingBox.style.width = `${width}%`;
+        drawingBox.style.height = `${height}%`;
+    }
+
+    function startMove(event, linkId) {
+        const link = links.find(item => item.id === linkId);
+        if (!link) return;
+
+        selectLink(linkId);
+        const point = pointToImagePercent(event.clientX, event.clientY);
+        interaction = {
+            type: 'move',
+            pointerId: event.pointerId,
+            linkId,
+            startX: point.x,
+            startY: point.y,
+            original: { ...link }
+        };
+        imageContainer.setPointerCapture?.(event.pointerId);
+        event.preventDefault();
+        event.stopPropagation();
+    }
+
+    function startResize(event, linkId, direction) {
+        const link = links.find(item => item.id === linkId);
+        if (!link) return;
+
+        selectLink(linkId);
+        const point = pointToImagePercent(event.clientX, event.clientY);
+        interaction = {
+            type: 'resize',
+            pointerId: event.pointerId,
+            linkId,
+            direction,
+            startX: point.x,
+            startY: point.y,
+            original: { ...link }
+        };
+        imageContainer.setPointerCapture?.(event.pointerId);
+        event.preventDefault();
+        event.stopPropagation();
+    }
+
+    function moveSelectedBy(deltaX, deltaY) {
+        const link = getSelectedLink();
+        if (!link) return;
+        link.left += deltaX;
+        link.top += deltaY;
+        normalizeLink(link);
+        renderAll();
+    }
+
+    function processMove(event) {
+        const link = links.find(item => item.id === interaction.linkId);
+        if (!link) return;
+
+        const point = pointToImagePercent(event.clientX, event.clientY);
+        let deltaX = point.x - interaction.startX;
+        let deltaY = point.y - interaction.startY;
+
+        link.left = interaction.original.left + deltaX;
+        link.top = interaction.original.top + deltaY;
+        normalizeLink(link);
+        renderAll(false);
+    }
+
+    function processResize(event) {
+        const link = links.find(item => item.id === interaction.linkId);
+        if (!link) return;
+
+        const point = pointToImagePercent(event.clientX, event.clientY);
+        const dx = point.x - interaction.startX;
+        const dy = point.y - interaction.startY;
+        const original = interaction.original;
+        const direction = interaction.direction;
+
+        let left = original.left;
+        let top = original.top;
+        let right = original.left + original.width;
+        let bottom = original.top + original.height;
+
+        if (direction.includes('w')) left = clamp(original.left + dx, 0, right - MIN_SIZE_PERCENT);
+        if (direction.includes('e')) right = clamp(right + dx, left + MIN_SIZE_PERCENT, 100);
+        if (direction.includes('n')) top = clamp(original.top + dy, 0, bottom - MIN_SIZE_PERCENT);
+        if (direction.includes('s')) bottom = clamp(bottom + dy, top + MIN_SIZE_PERCENT, 100);
+
+        link.left = left;
+        link.top = top;
+        link.width = right - left;
+        link.height = bottom - top;
+        normalizeLink(link);
+        renderAll(false);
+    }
+
+    function finishInteraction(event) {
+        if (!interaction) return;
+
+        if (interaction.type === 'draw') {
+            const rect = targetImage.getBoundingClientRect();
+            const widthPercent = Math.abs(interaction.currentX - interaction.startX);
+            const heightPercent = Math.abs(interaction.currentY - interaction.startY);
+            const widthPixels = rect.width * (widthPercent / 100);
+            const heightPixels = rect.height * (heightPercent / 100);
+
+            drawingBox?.remove();
+            drawingBox = null;
+
+            if (widthPixels >= MIN_DRAW_PIXELS && heightPixels >= MIN_DRAW_PIXELS) {
+                const link = {
+                    id: nextId++,
+                    className: '',
+                    left: Math.min(interaction.startX, interaction.currentX),
+                    top: Math.min(interaction.startY, interaction.currentY),
+                    width: widthPercent,
+                    height: heightPercent,
+                    actionType: 'url',
+                    url: '',
+                    newTab: false,
+                    message: '',
+                    altText: ''
+                };
+                normalizeLink(link);
+
+                const detectedText = findOcrTextForBox(link);
+                if (detectedText) {
+                    link.altText = detectedText;
+                }
+
+                links.push(link);
+                renumberLinks();
+                selectedId = link.id;
+                renderAll();
+                requestAnimationFrame(() => linkUrl.focus());
+            }
+        } else {
+            renderAll();
+        }
+
+        imageContainer.releasePointerCapture?.(interaction.pointerId);
+        interaction = null;
+        event?.preventDefault();
+    }
+
+    imageContainer.addEventListener('pointerdown', event => {
+        const handle = event.target.closest('.resize-handle');
+        if (handle) {
+            startResize(event, Number(handle.dataset.id), handle.dataset.direction);
+            return;
+        }
+
+        const box = event.target.closest('.link-box');
+        if (box) {
+            startMove(event, Number(box.dataset.id));
+            return;
+        }
+
+        startDrawing(event);
+    });
+
+    imageContainer.addEventListener('pointermove', event => {
+        if (!interaction) return;
+
+        if (interaction.type === 'draw') {
+            const point = pointToImagePercent(event.clientX, event.clientY);
+            interaction.currentX = point.x;
+            interaction.currentY = point.y;
+            updateDrawingBox();
+        } else if (interaction.type === 'move') {
+            processMove(event);
+        } else if (interaction.type === 'resize') {
+            processResize(event);
+        }
+        event.preventDefault();
+    });
+
+    imageContainer.addEventListener('pointerup', finishInteraction);
+    imageContainer.addEventListener('pointercancel', finishInteraction);
+
+    function selectLink(linkId) {
+        if (!links.some(link => link.id === linkId)) return;
+        selectedId = linkId;
+        renderAll();
+    }
+
+    function createHandle(direction, linkId) {
+        const handle = document.createElement('span');
+        handle.className = `resize-handle handle-${direction}`;
+        handle.dataset.direction = direction;
+        handle.dataset.id = linkId;
+        handle.setAttribute('aria-hidden', 'true');
+        return handle;
+    }
+
+    function renderLinks() {
+        imageContainer.querySelectorAll('.link-box').forEach(element => element.remove());
+
+        links.forEach((link, index) => {
+            const box = document.createElement('div');
+            box.className = `link-box${link.id === selectedId ? ' selected' : ''}`;
+            box.dataset.id = link.id;
+            box.style.left = `${link.left}%`;
+            box.style.top = `${link.top}%`;
+            box.style.width = `${link.width}%`;
+            box.style.height = `${link.height}%`;
+            const actionSummary = link.actionType === 'alert'
+                ? (link.message || 'Alert 문구 미입력')
+                : (link.url || 'URL 미입력');
+            box.title = `${link.className}: ${actionSummary}`;
+
+            const number = document.createElement('span');
+            number.className = 'link-number';
+            number.textContent = index + 1;
+            box.appendChild(number);
+
+            if (link.id === selectedId) {
+                ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'].forEach(direction => {
+                    box.appendChild(createHandle(direction, link.id));
+                });
+            }
+
+            imageContainer.appendChild(box);
+        });
+    }
+
+    function renderEditor() {
+        const link = getSelectedLink();
+        const hasSelection = Boolean(link);
+        emptyEditor.hidden = hasSelection;
+        editorBody.hidden = !hasSelection;
+        selectedName.textContent = hasSelection ? `.${link.className}` : '선택 없음';
+
+        if (!link) return;
+
+        link.actionType = link.actionType === 'alert' ? 'alert' : 'url';
+        actionUrl.checked = link.actionType === 'url';
+        actionAlert.checked = link.actionType === 'alert';
+        urlField.hidden = link.actionType !== 'url';
+        alertField.hidden = link.actionType !== 'alert';
+
+        if (document.activeElement !== linkUrl) linkUrl.value = link.url || '';
+        openNewTab.checked = link.newTab === true;
+        if (document.activeElement !== alertMessage) alertMessage.value = link.message || '';
+        if (document.activeElement !== altTextInput) altTextInput.value = link.altText || '';
+        if (document.activeElement !== leftInput) leftInput.value = link.left.toFixed(2);
+        if (document.activeElement !== topInput) topInput.value = link.top.toFixed(2);
+        if (document.activeElement !== widthInput) widthInput.value = link.width.toFixed(2);
+        if (document.activeElement !== heightInput) heightInput.value = link.height.toFixed(2);
+    }
+
+    function moveLinkInOrder(linkId, direction) {
+        const index = links.findIndex(link => link.id === linkId);
+        const targetIndex = index + direction;
+        if (index < 0 || targetIndex < 0 || targetIndex >= links.length) return;
+
+        [links[index], links[targetIndex]] = [links[targetIndex], links[index]];
+        renumberLinks();
+        renderAll();
+    }
+
+    function deleteLink(linkId) {
+        const index = links.findIndex(link => link.id === linkId);
+        if (index < 0) return;
+
+        links.splice(index, 1);
+        if (selectedId === linkId) {
+            selectedId = links[Math.min(index, links.length - 1)]?.id || null;
+        }
+        renumberLinks();
+        renderAll();
+    }
+
+    function reorderByDrag(sourceId, targetId) {
+        if (sourceId === targetId) return;
+        const sourceIndex = links.findIndex(link => link.id === sourceId);
+        const targetIndex = links.findIndex(link => link.id === targetId);
+        if (sourceIndex < 0 || targetIndex < 0) return;
+
+        const [moved] = links.splice(sourceIndex, 1);
+        links.splice(targetIndex, 0, moved);
+        renumberLinks();
+        renderAll();
+    }
+
+    function renderRegionList() {
+        regionCount.textContent = `${links.length}개`;
+        regionList.innerHTML = '';
+
+        if (links.length === 0) {
+            const empty = document.createElement('div');
+            empty.className = 'region-empty';
+            empty.textContent = '생성된 영역이 없습니다.';
+            regionList.appendChild(empty);
+            return;
+        }
+
+        links.forEach((link, index) => {
+            const item = document.createElement('div');
+            item.className = `region-item${link.id === selectedId ? ' selected' : ''}`;
+            item.dataset.id = link.id;
+            item.draggable = true;
+
+            const dragHandle = document.createElement('span');
+            dragHandle.className = 'drag-handle';
+            dragHandle.title = '드래그하여 순서 변경';
+            dragHandle.textContent = '⋮⋮';
+
+            const summary = document.createElement('div');
+            summary.className = 'region-summary';
+
+            const name = document.createElement('span');
+            name.className = 'region-name';
+            name.textContent = `.${link.className}`;
+
+            const message = document.createElement('span');
+            message.className = 'region-message';
+            
+            const displayInfo = link.actionType === 'alert'
+                ? `Alert · ${link.message || '문구 미입력'}`
+                : `URL · ${link.url || '주소 미입력'}`;
+            const altInfo = link.altText ? ` | 텍스트: ${link.altText.replace(/\n/g, ' ')}` : '';
+            message.textContent = displayInfo + altInfo;
+
+            summary.append(name, message);
+
+            const actions = document.createElement('div');
+            actions.className = 'item-actions';
+
+            const upButton = document.createElement('button');
+            upButton.type = 'button';
+            upButton.className = 'light';
+            upButton.textContent = '↑';
+            upButton.title = '앞 순서로 이동';
+            upButton.disabled = index === 0;
+            upButton.addEventListener('click', event => {
+                event.stopPropagation();
+                moveLinkInOrder(link.id, -1);
+            });
+
+            const downButton = document.createElement('button');
+            downButton.type = 'button';
+            downButton.className = 'light';
+            downButton.textContent = '↓';
+            downButton.title = '뒤 순서로 이동';
+            downButton.disabled = index === links.length - 1;
+            downButton.addEventListener('click', event => {
+                event.stopPropagation();
+                moveLinkInOrder(link.id, 1);
+            });
+
+            const deleteButton = document.createElement('button');
+            deleteButton.type = 'button';
+            deleteButton.className = 'light danger-text';
+            deleteButton.textContent = '삭제';
+            deleteButton.addEventListener('click', event => {
+                event.stopPropagation();
+                deleteLink(link.id);
+            });
+
+            actions.append(upButton, downButton, deleteButton);
+            item.append(dragHandle, summary, actions);
+
+            item.addEventListener('click', () => selectLink(link.id));
+            item.addEventListener('dragstart', event => {
+                draggedListId = link.id;
+                item.classList.add('dragging');
+                event.dataTransfer.effectAllowed = 'move';
+                event.dataTransfer.setData('text/plain', String(link.id));
+            });
+            item.addEventListener('dragend', () => {
+                draggedListId = null;
+                item.classList.remove('dragging');
+                regionList.querySelectorAll('.drag-target').forEach(el => el.classList.remove('drag-target'));
+            });
+            item.addEventListener('dragover', event => {
+                event.preventDefault();
+                item.classList.add('drag-target');
+                event.dataTransfer.dropEffect = 'move';
+            });
+            item.addEventListener('dragleave', () => item.classList.remove('drag-target'));
+            item.addEventListener('drop', event => {
+                event.preventDefault();
+                item.classList.remove('drag-target');
+                const sourceId = draggedListId || Number(event.dataTransfer.getData('text/plain'));
+                reorderByDrag(Number(sourceId), link.id);
+            });
+
+            regionList.appendChild(item);
+        });
+    }
+
+    function updateOutput() {
+        if (links.length === 0 && ocrDetections.length === 0) {
+            outputCssCode.value = '';
+            outputHtmlCode.value = '';
+            return;
+        }
+
+        // CSS 코드 생성 (<style> 태그 제거)
+        let styleHtml = ``;
+        links.forEach(link => {
+            styleHtml += `.${link.className} { width: ${link.width.toFixed(2)}%; height: ${link.height.toFixed(2)}%; left: ${link.left.toFixed(2)}%; top: ${link.top.toFixed(2)}%; }\n`;
+        });
+
+        // HTML 코드 생성
+        let bodyHtml = `<div class="link_evt">\n`;
+        bodyHtml += `    <img src="img" alt="이미지">\n`;
+
+        links.forEach(link => {
+            // 줄바꿈 문자를 공백으로 대체하여 한 줄 텍스트로 처리
+            const innerText = (link.altText || '').trim().replace(/\n/g, ' ');
+
+            if (link.actionType === 'alert') {
+                const escapedMessage = (link.message || '').replaceAll('"', '&quot;');
+                bodyHtml += `    <a href="javascript:alert('${escapedMessage}');" class="${link.className}">${innerText}</a>\n`;
+            } else {
+                const url = (link.url || '').trim() || '#none';
+                const finalUrl = url === '#' ? '#none' : url;
+                const targetAttrs = link.newTab === true && finalUrl !== '#none'
+                    ? ' target="_blank" rel="noopener noreferrer"'
+                    : '';
+                bodyHtml += `    <a href="${finalUrl}" class="${link.className}"${targetAttrs}>${innerText}</a>\n`;
+            }
+        });
+
+        // 단일 alt_hidden div 생성 (내용은 항상 비워둠)
+        bodyHtml += `    <div class="alt_hidden"></div>\n`;
+        bodyHtml += `</div>`;
+
+        // 나뉘어진 창에 각각 삽입
+        outputCssCode.value = styleHtml.trim();
+        outputHtmlCode.value = bodyHtml;
+    }
+
+    function renderAll(renderList = true) {
+        renumberLinks();
+        renderLinks();
+        renderEditor();
+        if (renderList) renderRegionList();
+        updateOutput();
+    }
+
+    actionTypeInputs.forEach(input => {
+        input.addEventListener('change', () => {
+            const link = getSelectedLink();
+            if (!link || !input.checked) return;
+            link.actionType = input.value;
+            renderAll();
+            requestAnimationFrame(() => {
+                if (link.actionType === 'url') linkUrl.focus();
+                else alertMessage.focus();
+            });
+        });
+    });
+
+    linkUrl.addEventListener('input', () => {
+        const link = getSelectedLink();
+        if (!link) return;
+        link.url = linkUrl.value;
+        renderLinks();
+        renderRegionList();
+        updateOutput();
+    });
+
+    openNewTab.addEventListener('change', () => {
+        const link = getSelectedLink();
+        if (!link) return;
+        link.newTab = openNewTab.checked;
+        updateOutput();
+    });
+
+    alertMessage.addEventListener('input', () => {
+        const link = getSelectedLink();
+        if (!link) return;
+        link.message = alertMessage.value;
+        renderLinks();
+        renderRegionList();
+        updateOutput();
+    });
+
+    altTextInput.addEventListener('input', () => {
+        const link = getSelectedLink();
+        if (!link) return;
+        link.altText = altTextInput.value;
+        renderRegionList();
+        updateOutput();
+    });
+
+    const numericInputs = [
+        [leftInput, 'left'],
+        [topInput, 'top'],
+        [widthInput, 'width'],
+        [heightInput, 'height']
+    ];
+
+    numericInputs.forEach(([input, property]) => {
+        input.addEventListener('input', () => {
+            const link = getSelectedLink();
+            if (!link || input.value === '') return;
+            link[property] = Number(input.value);
+            normalizeLink(link);
+            renderLinks();
+            renderRegionList();
+            updateOutput();
+        });
+
+        input.addEventListener('change', () => renderAll());
+    });
+
+    document.querySelectorAll('[data-nudge]').forEach(button => {
+        button.addEventListener('click', () => {
+            const direction = button.dataset.nudge;
+            const amount = 0.1;
+            const dx = direction === 'left' ? -amount : direction === 'right' ? amount : 0;
+            const dy = direction === 'up' ? -amount : direction === 'down' ? amount : 0;
+            moveSelectedBy(dx, dy);
+        });
+    });
+
+    document.addEventListener('keydown', event => {
+        const activeTag = document.activeElement?.tagName;
+        if (['INPUT', 'TEXTAREA'].includes(activeTag)) return;
+        if (!getSelectedLink()) return;
+
+        const amount = event.shiftKey ? 1 : 0.1;
+        const movements = {
+            ArrowLeft: [-amount, 0],
+            ArrowRight: [amount, 0],
+            ArrowUp: [0, -amount],
+            ArrowDown: [0, amount]
+        };
+
+        if (movements[event.key]) {
+            event.preventDefault();
+            moveSelectedBy(...movements[event.key]);
+        }
+
+        if (event.key === 'Delete') {
+            event.preventDefault();
+            deleteLink(selectedId);
+        }
+    });
+
+    resetBtn.addEventListener('click', resetAll);
+
+    // 복사 기능 통합 함수
+    async function copyToClipboard(element, label) {
+        if (!element.value) {
+            showToast(`복사할 ${label} 코드가 없습니다.`);
+            return;
+        }
+
+        try {
+            await navigator.clipboard.writeText(element.value);
+        } catch (error) {
+            element.focus();
+            element.select();
+            document.execCommand('copy');
+        }
+        showToast(`${label} 코드를 클립보드에 복사했습니다.`);
+    }
+
+    copyCssBtn.addEventListener('click', () => copyToClipboard(outputCssCode, 'CSS'));
+    copyHtmlBtn.addEventListener('click', () => copyToClipboard(outputHtmlCode, 'HTML'));
+
+    renderAll();
+</script>
+
+</body>
+</html>
