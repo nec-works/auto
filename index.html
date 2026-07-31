@@ -1,1 +1,168 @@
-index.html
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>tool</title>
+    <style>
+        /* 깔끔한 폰트(Pretendard) 적용 */
+        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif;
+            background-color: #0f172a; /* 깊은 다크 블루 배경 */
+            color: #e2e8f0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 2rem;
+        }
+
+        .container {
+            max-width: 900px;
+            width: 100%;
+        }
+
+        h1 {
+            text-align: center;
+            font-size: 2.2rem;
+            font-weight: 700;
+            margin-bottom: 3rem;
+            color: #f8fafc;
+            letter-spacing: -0.5px;
+        }
+
+        .card-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 1.5rem;
+        }
+
+        /* 카드 기본 스타일 */
+        .card {
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 16px;
+            padding: 2rem;
+            text-decoration: none;
+            display: flex;
+            flex-direction: column;
+            gap: 1.2rem;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+            cursor: pointer;
+        }
+
+        /* 카드 상단 포인트 컬러 라인 */
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 4px;
+            background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        /* 카드 호버(마우스 오버) 액션 */
+        .card:hover {
+            transform: translateY(-6px);
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.2);
+            border-color: #475569;
+            background: #233044;
+        }
+
+        .card:hover::before {
+            opacity: 1;
+        }
+
+        /* 아이콘 영역 */
+        .icon-wrapper {
+            width: 52px;
+            height: 52px;
+            border-radius: 14px;
+            background: rgba(45, 212, 191, 0.15); /* 청록색 틴트 */
+            color: #2dd4bf;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.8rem;
+        }
+        
+        /* 두 번째 카드는 보라색 틴트 */
+        .card:nth-child(2) .icon-wrapper {
+            background: rgba(129, 140, 248, 0.15);
+            color: #818cf8;
+        }
+
+        .card-title {
+            font-size: 1.3rem;
+            font-weight: 600;
+            color: #f1f5f9;
+        }
+
+        .card-desc {
+            font-size: 0.95rem;
+            color: #94a3b8;
+            line-height: 1.5;
+            word-break: keep-all;
+        }
+        
+        .card-footer {
+            margin-top: auto;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .tag {
+            background: #334155;
+            color: #cbd5e1;
+            padding: 0.3rem 0.6rem;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>초중학 편의 툴</h1>
+        <div class="card-grid">
+            
+            <!-- 1. 자동화_이미지영역.html -->
+            <a href="./자동화_이미지영역.html" class="card">
+                <div class="icon-wrapper">🖼️</div>
+                <div class="card-title">자동화_이미지영역</div>
+                <div class="card-desc">이미지 영역 A 링크를 이미지맵처럼 사용 처리 + 텍스트 인식</div>
+                <!-- <div class="card-footer">
+                    <span class="tag"></span>
+                    <span class="tag">Automation</span>
+                </div> -->
+            </a>
+
+            <!-- 2. 자동화_초등출석체크.html -->
+            <a href="./자동화_초등출석체크.html" class="card">
+                <div class="icon-wrapper">✅</div>
+                <div class="card-title">자동화_초등출석체크</div>
+                <div class="card-desc">초등 출석체크 월 테이블 자동생성 및 포지션위치 조정 편의 </div>
+                <!-- <div class="card-footer">
+                    <span class="tag">HTML</span>
+                    <span class="tag">Automation</span>
+                </div> -->
+            </a>
+
+        </div>
+    </div>
+</body>
+</html>
